@@ -1,0 +1,2 @@
+# The token check decides who may change settings. Changes to it need its owner's approval.
+/mcp/src/token-check.ts @heikkips1
