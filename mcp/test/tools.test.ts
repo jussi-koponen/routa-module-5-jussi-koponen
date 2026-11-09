@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { applyChangeTool } from "../src/tools/apply-change.ts";
 import { copyGroupAccessTool } from "../src/tools/copy-group-access.ts";
@@ -81,4 +84,20 @@ test("a preview expires after five minutes", async () => {
   assert.throws(() => takeChange(id, 5 * 60_000 + 1), /expired/);
   const again = idOf(showChange([change], await getSettings(), 0));
   assert.deepEqual(takeChange(again, 5 * 60_000), [change]);
+});
+
+test("apply_change records scope, change and time, and no token", async () => {
+  const log = join(mkdtempSync(join(tmpdir(), "audit-")), "audit.log");
+  process.env.ROUTA_AUDIT_LOG = log;
+  process.env.MCP_TOKEN = "secret-token-value";
+  fakePlatform();
+  await applyChangeTool.handler({ id: idOf(await previewChangeTool.handler({ changes: [change] })) });
+  const text = readFileSync(log, "utf8");
+  const entry = JSON.parse(text);
+  assert.equal(entry.scope, "admin");
+  assert.deepEqual(entry.changes, [change]);
+  assert.ok(!Number.isNaN(Date.parse(entry.time)));
+  assert.ok(!text.includes("secret-token-value"));
+  delete process.env.ROUTA_AUDIT_LOG;
+  delete process.env.MCP_TOKEN;
 });
