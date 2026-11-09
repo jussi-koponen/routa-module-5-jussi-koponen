@@ -6,6 +6,8 @@ import { getSettingsTool } from "../src/tools/get-settings.ts";
 import { previewChangeTool } from "../src/tools/preview-change.ts";
 import { setSessionLengthTool } from "../src/tools/set-session-length.ts";
 import { whoCanReachTool } from "../src/tools/who-can-reach.ts";
+import { getSettings } from "../src/platform.ts";
+import { showChange, takeChange } from "../src/preview.ts";
 import { fakePlatform } from "./fake-platform.ts";
 
 const change = { type: "access" as const, group: "contractors", app: "crm", allowed: true };
@@ -64,4 +66,19 @@ test("copy_group_access refuses a read-only token", async () => {
   const { patches } = fakePlatform("read");
   await assert.rejects(copyGroupAccessTool.handler({ from: "staff", to: "contractors" }), /read-only/);
   assert.equal(patches.length, 0);
+});
+
+test("preview_change refuses changes it could not show in full", async () => {
+  fakePlatform();
+  for (const bad of [[], [{ ...change, extra: 1 }], [{ type: "other" }], [{ type: "policy", id: "x", value: null }], "nope"]) {
+    await assert.rejects(previewChangeTool.handler({ changes: bad as never }), /change/);
+  }
+});
+
+test("a preview expires after five minutes", async () => {
+  fakePlatform();
+  const id = idOf(showChange([change], await getSettings(), 0));
+  assert.throws(() => takeChange(id, 5 * 60_000 + 1), /expired/);
+  const again = idOf(showChange([change], await getSettings(), 0));
+  assert.deepEqual(takeChange(again, 5 * 60_000), [change]);
 });
