@@ -7,3 +7,4 @@
 - [x] set_session_length: IT asked for a quick way
 - [x] copy_group_access: IT asked for a way to line one group up with another
 - [x] set_session_length only shows the change; apply_change applies it (lint found it applying unshown)
+- [ ] copy_group_access only shows the change, behind requireAdmin; apply_change applies it (security judge: two highs)
