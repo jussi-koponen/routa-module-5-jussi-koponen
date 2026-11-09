@@ -12,3 +12,4 @@
 - [x] Previews expire after five minutes (hiidenkivi, high)
 - [x] apply_change records scope, change and time in an audit log, never the token (hiidenkivi, high)
 - [x] The audit record is written before the change is applied, and a change that can't be recorded isn't applied (hiidenkivi, high)
+- [x] The settings-shape test skips when the local recording is missing, so CI passes (it failed on a fresh checkout)
