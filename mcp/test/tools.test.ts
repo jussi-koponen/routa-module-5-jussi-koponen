@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { applyChangeTool } from "../src/tools/apply-change.ts";
 import { copyGroupAccessTool } from "../src/tools/copy-group-access.ts";
@@ -6,6 +9,8 @@ import { getSettingsTool } from "../src/tools/get-settings.ts";
 import { previewChangeTool } from "../src/tools/preview-change.ts";
 import { setSessionLengthTool } from "../src/tools/set-session-length.ts";
 import { whoCanReachTool } from "../src/tools/who-can-reach.ts";
+import { getSettings } from "../src/platform.ts";
+import { showChange, takeChange } from "../src/preview.ts";
 import { fakePlatform } from "./fake-platform.ts";
 
 const change = { type: "access" as const, group: "contractors", app: "crm", allowed: true };
@@ -42,16 +47,66 @@ test("a read-only token can't preview or apply", async () => {
   assert.equal(patches.length, 0);
 });
 
-test("set_session_length sets the policy", async () => {
+test("set_session_length only shows the change; apply_change applies it", async () => {
   const { patches } = fakePlatform();
-  await setSessionLengthTool.handler({ hours: 8 });
+  const shown = await setSessionLengthTool.handler({ hours: 8 });
+  assert.match(shown, /session-length-hours goes from .* to 8/);
+  assert.equal(patches.length, 0);
+  await applyChangeTool.handler({ id: idOf(shown) });
   assert.deepEqual(patches, [{ type: "policy", id: "session-length-hours", value: 8 }]);
 });
 
-test("copy_group_access shows the change, then applies it", async () => {
+test("copy_group_access only shows the change; apply_change applies it", async () => {
   const { patches } = fakePlatform();
-  assert.match(await copyGroupAccessTool.handler({ from: "staff", to: "contractors" }), /contractors gains documents/);
+  const shown = await copyGroupAccessTool.handler({ from: "staff", to: "contractors" });
+  assert.match(shown, /contractors gains documents/);
   assert.equal(patches.length, 0);
-  await copyGroupAccessTool.handler({ from: "staff", to: "contractors", confirm: true });
+  await applyChangeTool.handler({ id: idOf(shown) });
   assert.equal(patches.length, 1);
+});
+
+test("copy_group_access refuses a read-only token", async () => {
+  const { patches } = fakePlatform("read");
+  await assert.rejects(copyGroupAccessTool.handler({ from: "staff", to: "contractors" }), /read-only/);
+  assert.equal(patches.length, 0);
+});
+
+test("preview_change refuses changes it could not show in full", async () => {
+  fakePlatform();
+  for (const bad of [[], [{ ...change, extra: 1 }], [{ type: "other" }], [{ type: "policy", id: "x", value: null }], "nope"]) {
+    await assert.rejects(previewChangeTool.handler({ changes: bad as never }), /change/);
+  }
+});
+
+test("a preview expires after five minutes", async () => {
+  fakePlatform();
+  const id = idOf(showChange([change], await getSettings(), 0));
+  assert.throws(() => takeChange(id, 5 * 60_000 + 1), /expired/);
+  const again = idOf(showChange([change], await getSettings(), 0));
+  assert.deepEqual(takeChange(again, 5 * 60_000), [change]);
+});
+
+test("apply_change records scope, change and time, and no token", async () => {
+  const log = join(mkdtempSync(join(tmpdir(), "audit-")), "audit.log");
+  process.env.ROUTA_AUDIT_LOG = log;
+  process.env.MCP_TOKEN = "secret-token-value";
+  fakePlatform();
+  await applyChangeTool.handler({ id: idOf(await previewChangeTool.handler({ changes: [change] })) });
+  const text = readFileSync(log, "utf8");
+  const entry = JSON.parse(text);
+  assert.equal(entry.scope, "admin");
+  assert.deepEqual(entry.changes, [change]);
+  assert.ok(!Number.isNaN(Date.parse(entry.time)));
+  assert.ok(!text.includes("secret-token-value"));
+  delete process.env.ROUTA_AUDIT_LOG;
+  delete process.env.MCP_TOKEN;
+});
+
+test("apply_change applies nothing when the audit log can't be written", async () => {
+  process.env.ROUTA_AUDIT_LOG = join(tmpdir(), "no-such-folder-for-audit", "audit.log");
+  const { patches } = fakePlatform();
+  const shown = await previewChangeTool.handler({ changes: [change] });
+  await assert.rejects(applyChangeTool.handler({ id: idOf(shown) }), /not recorded.*nothing was changed/s);
+  assert.equal(patches.length, 0);
+  delete process.env.ROUTA_AUDIT_LOG;
 });
