@@ -11,3 +11,4 @@
 - [x] preview_change validates its changes and shows every field, so what is applied is what was shown (default criteria, high)
 - [x] Previews expire after five minutes (hiidenkivi, high)
 - [x] apply_change records scope, change and time in an audit log, never the token (hiidenkivi, high)
+- [x] The audit record is written before the change is applied, and a change that can't be recorded isn't applied (hiidenkivi, high)

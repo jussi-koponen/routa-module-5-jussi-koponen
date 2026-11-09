@@ -101,3 +101,12 @@ test("apply_change records scope, change and time, and no token", async () => {
   delete process.env.ROUTA_AUDIT_LOG;
   delete process.env.MCP_TOKEN;
 });
+
+test("apply_change applies nothing when the audit log can't be written", async () => {
+  process.env.ROUTA_AUDIT_LOG = join(tmpdir(), "no-such-folder-for-audit", "audit.log");
+  const { patches } = fakePlatform();
+  const shown = await previewChangeTool.handler({ changes: [change] });
+  await assert.rejects(applyChangeTool.handler({ id: idOf(shown) }), /not recorded.*nothing was changed/s);
+  assert.equal(patches.length, 0);
+  delete process.env.ROUTA_AUDIT_LOG;
+});
